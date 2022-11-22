@@ -11,15 +11,8 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go hello c/hello_kern.c
-
+//go:generate bpf2go hello c/hello_kern.c
 func main() {
-	objects := helloObjects{}
-	err := loadHelloObjects(objects, nil)
-	if err != nil {
-		return
-	}
-
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
 
@@ -29,8 +22,8 @@ func main() {
 	}
 
 	// Load pre-compiled programs and maps into the kernel.
-	objs := bpfObjects{}
-	if err := loadBpfObjects(&objs, nil); err != nil {
+	objs := helloObjects{}
+	if err := loadHelloObjects(&objs, nil); err != nil {
 		log.Fatalf("loading objects: %s", err)
 	}
 	defer objs.Close()

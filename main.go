@@ -30,6 +30,11 @@ func main() {
 
 	//SEC("tracepoint/syscalls/sys_enter_execve")
 	// attach to xxx
+	kprobe, err := link.Kprobe("", objs.BpfProg, nil)
+	if err != nil {
+		return
+	}
+	defer kprobe.Close()
 	kp, err := link.Tracepoint("syscalls", "sys_enter_execve", objs.BpfProg, nil)
 	if err != nil {
 		log.Fatalf("opening tracepoint: %s", err)

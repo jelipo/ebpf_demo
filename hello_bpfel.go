@@ -13,6 +13,8 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type helloStringkey [64]int8
+
 // loadHello returns the embedded CollectionSpec for hello.
 func loadHello() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_HelloBytes)
@@ -61,6 +63,7 @@ type helloProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type helloMapSpecs struct {
+	ExecveCounter *ebpf.MapSpec `ebpf:"execve_counter"`
 }
 
 // helloObjects contains all objects after they have been loaded into the kernel.
@@ -82,10 +85,13 @@ func (o *helloObjects) Close() error {
 //
 // It can be passed to loadHelloObjects or ebpf.CollectionSpec.LoadAndAssign.
 type helloMaps struct {
+	ExecveCounter *ebpf.Map `ebpf:"execve_counter"`
 }
 
 func (m *helloMaps) Close() error {
-	return _HelloClose()
+	return _HelloClose(
+		m.ExecveCounter,
+	)
 }
 
 // helloPrograms contains all programs after they have been loaded into the kernel.

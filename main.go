@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
@@ -28,23 +29,37 @@ func main() {
 	}
 	defer objs.Close()
 
-	//SEC("tracepoint/syscalls/sys_enter_execve")
-	// attach to xxx
-	kprobe, err := link.Kprobe("", objs.BpfProg, nil)
-	if err != nil {
-		return
+	// init the map element
+	var key [64]byte
+	copy(key[:], "execve_counter")
+	var val int64 = 0
+	if err := objs.helloMaps.ExecveCounter.Put(key, val); err != nil {
+		log.Fatalf("init map key error: %s", err)
 	}
-	defer kprobe.Close()
+
+	// attach to xxx
 	kp, err := link.Tracepoint("syscalls", "sys_enter_execve", objs.BpfProg, nil)
 	if err != nil {
 		log.Fatalf("opening tracepoint: %s", err)
 	}
 	defer kp.Close()
 
-	log.Printf("Successfully started! Please run \"sudo cat /sys/kernel/debug/tracing/trace_pipe\" to see output of the BPF programs\n")
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 
-	// Wait for a signal and close the perf reader,
-	// which will interrupt rd.Read() and make the program exit.
-	<-stopper
-	log.Println("Received signal, exiting program..")
+	for {
+		select {
+		case <-ticker.C:
+			if err := objs.helloMaps.ExecveCounter.Lookup(key, &val); err != nil {
+				log.Fatalf("reading map error: %s", err)
+			}
+			log.Printf("execve_counter: %d\n", val)
+
+		case <-stopper:
+			// Wait for a signal and close the perf reader,
+			// which will interrupt rd.Read() and make the program exit.
+			log.Println("Received signal, exiting program..")
+			return
+		}
+	}
 }

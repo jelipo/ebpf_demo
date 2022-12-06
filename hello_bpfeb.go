@@ -64,6 +64,7 @@ type helloProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type helloMapSpecs struct {
 	ExecveCounter *ebpf.MapSpec `ebpf:"execve_counter"`
+	MyMap         *ebpf.MapSpec `ebpf:"my_map"`
 }
 
 // helloObjects contains all objects after they have been loaded into the kernel.
@@ -86,11 +87,13 @@ func (o *helloObjects) Close() error {
 // It can be passed to loadHelloObjects or ebpf.CollectionSpec.LoadAndAssign.
 type helloMaps struct {
 	ExecveCounter *ebpf.Map `ebpf:"execve_counter"`
+	MyMap         *ebpf.Map `ebpf:"my_map"`
 }
 
 func (m *helloMaps) Close() error {
 	return _HelloClose(
 		m.ExecveCounter,
+		m.MyMap,
 	)
 }
 

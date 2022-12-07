@@ -7,25 +7,28 @@ typedef char stringkey[64];
 struct bpf_map_def SEC("maps") my_map = {
         .type = BPF_MAP_TYPE_HASH,
         .max_entries = 128,
-        .key_size = sizeof(int),
-        .value_size = sizeof(int),
+        .key_size = 64,
+        .value_size = 8,
         .map_flags = BPF_F_NO_PREALLOC,
 };
 
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, 128);
-    //__type(key, stringkey);
-    stringkey *key;
-    __type(value, u64);
-} execve_counter SEC(".maps");
+//struct {
+//    __uint(type, BPF_MAP_TYPE_HASH);
+//    __uint(max_entries, 128);
+//    //__type(key, stringkey);
+//    stringkey *key;
+//    __type(value, u64);
+//} execve_counter SEC(".maps");
 
 
 SEC("tracepoint/syscalls/sys_enter_execve")
 int bpf_prog(void *ctx) {
-    int key = 1;
-    int value = 1111;
-    long a = bpf_map_update_elem(&my_map, &key, &value, BPF_ANY);
+    char key[64] = "key";
+    int *value = NULL;
+    value = bpf_map_lookup_elem(&my_map, &key);
+    if (value != NULL) {
+        *value += 1;
+    }
     return 0;
 }
 

@@ -31,9 +31,10 @@ func main() {
 
 	// init the map element
 	var key [64]byte
-	copy(key[:], "execve_counter")
+	copy(key[:], "key")
 	var val int64 = 0
-	if err := objs.helloMaps.ExecveCounter.Put(key, val); err != nil {
+
+	if err := objs.MyMap.Put(key, val); err != nil {
 		log.Fatalf("init map key error: %s", err)
 	}
 
@@ -44,17 +45,16 @@ func main() {
 	}
 	defer kp.Close()
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			if err := objs.helloMaps.ExecveCounter.Lookup(key, &val); err != nil {
+			if err := objs.MyMap.Lookup(key, &val); err != nil {
 				log.Fatalf("reading map error: %s", err)
 			}
 			log.Printf("execve_counter: %d\n", val)
-
 		case <-stopper:
 			// Wait for a signal and close the perf reader,
 			// which will interrupt rd.Read() and make the program exit.

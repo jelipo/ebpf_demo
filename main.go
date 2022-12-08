@@ -34,6 +34,8 @@ func main() {
 	copy(key[:], "key")
 	var val int64 = 0
 
+	objs.Event.
+
 	if err := objs.MyMap.Put(key, val); err != nil {
 		log.Fatalf("init map key error: %s", err)
 	}

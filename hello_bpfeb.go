@@ -54,14 +54,14 @@ type helloSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type helloProgramSpecs struct {
-	BpfProg *ebpf.ProgramSpec `ebpf:"bpf_prog"`
+	BpfCaptureExec *ebpf.ProgramSpec `ebpf:"bpf_capture_exec"`
 }
 
 // helloMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type helloMapSpecs struct {
-	MyMap *ebpf.MapSpec `ebpf:"my_map"`
+	Event *ebpf.MapSpec `ebpf:"event"`
 }
 
 // helloObjects contains all objects after they have been loaded into the kernel.
@@ -83,12 +83,12 @@ func (o *helloObjects) Close() error {
 //
 // It can be passed to loadHelloObjects or ebpf.CollectionSpec.LoadAndAssign.
 type helloMaps struct {
-	MyMap *ebpf.Map `ebpf:"my_map"`
+	Event *ebpf.Map `ebpf:"event"`
 }
 
 func (m *helloMaps) Close() error {
 	return _HelloClose(
-		m.MyMap,
+		m.Event,
 	)
 }
 
@@ -96,12 +96,12 @@ func (m *helloMaps) Close() error {
 //
 // It can be passed to loadHelloObjects or ebpf.CollectionSpec.LoadAndAssign.
 type helloPrograms struct {
-	BpfProg *ebpf.Program `ebpf:"bpf_prog"`
+	BpfCaptureExec *ebpf.Program `ebpf:"bpf_capture_exec"`
 }
 
 func (p *helloPrograms) Close() error {
 	return _HelloClose(
-		p.BpfProg,
+		p.BpfCaptureExec,
 	)
 }
 

@@ -31,6 +31,7 @@ struct data_t {
 
 SEC("kprobe/sys_exec")
 int bpf_capture_exec(struct pt_regs *ctx) {
+    bpf_printk("hello world");
     struct data_t data;
     data.pid = bpf_get_current_pid_tgid() >> 32;
     bpf_get_current_comm(&data.program_name, sizeof(data.program_name));

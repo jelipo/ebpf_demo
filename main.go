@@ -2,14 +2,12 @@
 package main
 
 import (
+	"github.com/cilium/ebpf/perf"
+	"github.com/cilium/ebpf/rlimit"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
-
-	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/rlimit"
 )
 
 //go:generate bpf2go hello c/hello_kern.c
@@ -29,39 +27,17 @@ func main() {
 	}
 	defer objs.Close()
 
-	// init the map element
-	var key [64]byte
-	copy(key[:], "key")
-	var val int64 = 0
-
-	objs.Event.
-
-	if err := objs.MyMap.Put(key, val); err != nil {
-		log.Fatalf("init map key error: %s", err)
-	}
-
-	// attach to xxx
-	kp, err := link.Tracepoint("syscalls", "sys_enter_execve", objs.BpfProg, nil)
+	reader, err := perf.NewReader(objs.Event, os.Getpagesize())
 	if err != nil {
-		log.Fatalf("opening tracepoint: %s", err)
+		return
 	}
-	defer kp.Close()
-
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if err := objs.MyMap.Lookup(key, &val); err != nil {
-				log.Fatalf("reading map error: %s", err)
-			}
-			log.Printf("execve_counter: %d\n", val)
-		case <-stopper:
-			// Wait for a signal and close the perf reader,
-			// which will interrupt rd.Read() and make the program exit.
-			log.Println("Received signal, exiting program..")
+	defer reader.Close()
+	for true {
+		record, err := reader.Read()
+		if err != nil {
+			log.Fatalf("read failed: %s", err)
 			return
 		}
+		println("get : " + string(record.RawSample))
 	}
 }

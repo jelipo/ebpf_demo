@@ -61,7 +61,7 @@ type helloProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type helloMapSpecs struct {
-	Event *ebpf.MapSpec `ebpf:"event"`
+	Events *ebpf.MapSpec `ebpf:"events"`
 }
 
 // helloObjects contains all objects after they have been loaded into the kernel.
@@ -83,12 +83,12 @@ func (o *helloObjects) Close() error {
 //
 // It can be passed to loadHelloObjects or ebpf.CollectionSpec.LoadAndAssign.
 type helloMaps struct {
-	Event *ebpf.Map `ebpf:"event"`
+	Events *ebpf.Map `ebpf:"events"`
 }
 
 func (m *helloMaps) Close() error {
 	return _HelloClose(
-		m.Event,
+		m.Events,
 	)
 }
 

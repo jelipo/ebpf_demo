@@ -3,4 +3,6 @@ project(c C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(c hello_kern.c)
+
+
+add_executable(c hello/hello_kern.c)

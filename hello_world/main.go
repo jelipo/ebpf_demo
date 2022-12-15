@@ -11,7 +11,7 @@ import (
 	"syscall"
 )
 
-//go:generate bpf2go hello c/hello_kern.c
+//go:generate bpf2go hello ../c/hello/hello_kern.c
 func main() {
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)

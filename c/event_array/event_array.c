@@ -4,21 +4,23 @@
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-struct bpf_map_def SEC("maps") my_map = {
-        .type = BPF_MAP_TYPE_HASH,
-        .max_entries = 128,
-        .key_size = 64,
-        .value_size = sizeof(u64),
-        .map_flags = BPF_F_NO_PREALLOC,
+struct bpf_map_def SEC("maps") my_event = {
+        .type = BPF_MAP_TYPE_PERF_EVENT_ARRAY
 };
 
+struct prodata {
+    u32 pid;
+    u8 program_name[16];
+};
+
+struct prodata *unused __attribute__((unused));
+
 SEC("tracepoint/syscalls/sys_enter_execve")
-int bpf_prog(void *ctx) {
-    char key[64] = "key";
-    int *value = NULL;
-    value = bpf_map_lookup_elem(&my_map, &key);
-    if (value != NULL) {
-        *value += 1;
-    }
+int bpf_prog(struct pt_regs *ctx) {
+    bpf_printk("hello world");
+    struct prodata data;
+    data.pid = bpf_get_current_pid_tgid() >> 32;
+    bpf_get_current_comm(&data.program_name, sizeof(data.program_name));
+    bpf_perf_event_output(ctx, &my_event, 0, &data, sizeof(data));
     return 0;
 }

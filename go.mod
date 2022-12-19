@@ -1,6 +1,6 @@
 module ebpf_demo
 
-go 1.19
+go 1.20
 
 require github.com/cilium/ebpf v0.9.3
 

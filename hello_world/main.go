@@ -2,16 +2,16 @@
 package main
 
 import (
-	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/perf"
-	"github.com/cilium/ebpf/rlimit"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate bpf2go hello ../c/hello/hello_kern.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go hello ../c/hello/hello_kern.c
 func main() {
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
@@ -28,29 +28,18 @@ func main() {
 	}
 	defer objs.Close()
 
-	// Open an ELF binary and read its symbols.
-	ex, err := link.OpenExecutable(binPath)
+	//SEC("tracepoint/syscalls/sys_enter_execve")
+	// attach to xxx
+	kp, err := link.Tracepoint("syscalls", "sys_enter_execve", objs.BpfProg, nil)
 	if err != nil {
-		log.Fatalf("opening executable: %s", err)
+		log.Fatalf("opening tracepoint: %s", err)
 	}
+	defer kp.Close()
 
-	up, err := ex.Uretprobe(symbol, objs.UretprobeBashReadline, nil)
-	if err != nil {
-		log.Fatalf("creating uretprobe: %s", err)
-	}
-	defer up.Close()
+	log.Printf("Successfully started! Please run \"sudo cat /sys/kernel/debug/tracing/trace_pipe\" to see output of the BPF programs\n")
 
-	reader, err := perf.NewReader(objs.Events, os.Getpagesize())
-	if err != nil {
-		return
-	}
-	defer reader.Close()
-	for true {
-		record, err := reader.Read()
-		if err != nil {
-			log.Fatalf("read failed: %s", err)
-			return
-		}
-		println("get : " + string(record.RawSample))
-	}
+	// Wait for a signal and close the perf reader,
+	// which will interrupt rd.Read() and make the program exit.
+	<-stopper
+	log.Println("Received signal, exiting program..")
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type prodata event ../c/event_array/event_array.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type pro_data event ../c/event_array/event_array.c
 func main() {
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
@@ -61,7 +61,7 @@ func main() {
 		}
 	}()
 
-	var event eventProdata
+	var event eventProData
 	for true {
 		record, err := reader.Read()
 		if err != nil {

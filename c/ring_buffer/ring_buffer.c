@@ -5,7 +5,7 @@
 char __license[] SEC("license") = "Dual MIT/GPL";
 
 struct bpf_map_def SEC("maps") my_event = {
-        .type = BPF_MAP_TYPE_PERF_EVENT_ARRAY
+        .type = BPF_MAP_TYPE_RINGBUF
 };
 
 struct pro_data {

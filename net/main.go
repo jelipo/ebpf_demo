@@ -28,7 +28,7 @@ func main() {
 	// Load pre-compiled programs and maps into the kernel.
 	objs := eventObjects{}
 	if err := loadEventObjects(&objs, nil); err != nil {
-		log.Fatalf("loading objects: %s", err)
+		log.Fatalf("loading objects:	 %s", err)
 	}
 	defer objs.Close()
 

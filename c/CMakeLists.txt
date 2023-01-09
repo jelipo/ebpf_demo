@@ -3,6 +3,16 @@ project(c C)
 
 set(CMAKE_C_STANDARD 11)
 
+
+#execute_process(
+#        COMMAND uname -r
+#        OUTPUT_VARIABLE KERNEL_RELEASE
+#        OUTPUT_STRIP_TRAILING_WHITESPACE
+#)
+#
+#include_directories(/usr/src/linux-headers-${KERNEL_RELEASE}/include)
+
+
 add_executable(c
         hello/hello_kern.c
         hash_map/hash_map.c

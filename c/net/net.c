@@ -1,6 +1,7 @@
 #include "../include/vmlinux.h"
 #include <bpf/bpf_helpers.h>
 
+
 char __license[] SEC("license") = "Dual MIT/GPL";
 
 
@@ -25,7 +26,7 @@ SEC("tracepoint/sock/inet_sock_set_state")
 int bpf_prog(struct pt_regs *ctx, struct sock *sk) {
     struct pro_data data;
     data.pid = bpf_get_current_pid_tgid() >> 32;
-    bpf_probe_read_kernel(&data.daddr, sizeof(data.daddr), (void *) sk->sk_rx_dst.);
+    bpf_probe_read_kernel(&data.daddr, sizeof(data.daddr), (void *) &sk->sk_ack_backlog);
     bpf_perf_event_output(ctx, &my_event, 0, &data, sizeof(data));
     return 0;
 }

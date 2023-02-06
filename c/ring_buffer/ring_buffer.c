@@ -1,26 +1,31 @@
-#include <linux/bpf.h>
+#include "../include/vmlinux.h"
 #include <bpf/bpf_helpers.h>
-#include "../include/common.h"
+
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-struct bpf_map_def SEC("maps") my_event = {
-        .type = BPF_MAP_TYPE_RINGBUF
-};
-
-struct pro_data {
+struct event {
     u32 pid;
-    u8 program_name[16];
+    u32 sig;
 };
 
-struct pro_data *unused __attribute__((unused));
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 1 << 24);
+} events SEC(".maps");
 
-SEC("tracepoint/syscalls/sys_enter_execve")
-int bpf_prog(struct pt_regs *ctx) {
-    bpf_printk("hello world");
-    struct pro_data data;
-    data.pid = bpf_get_current_pid_tgid() >> 32;
-    bpf_get_current_comm(&data.program_name, sizeof(data.program_name));
-    bpf_perf_event_output(ctx, &my_event, 0, &data, sizeof(data));
+// Force emitting struct event into the ELF.
+const struct event *unused __attribute__((unused));
+
+SEC("tracing/syscalls/sys_enter_kill")
+int ringbuffer_execve(struct trace_event_raw_sys_enter *ctx) {
+    int pid = bpf_get_current_pid_tgid() >> 32;
+    int tpid = ctx->args[0];
+    int sig = ctx->args[1];
+    struct event e = {
+            .pid=pid,
+            .sig = sig,
+    };
+    bpf_ringbuf_output(&events, &e, sizeof(e), 0);
     return 0;
 }

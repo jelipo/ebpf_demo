@@ -2,16 +2,20 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go ringBuffer ../c/ring_buffer/ring_buffer.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type event ringBuffer ../c/ring_buffer/ring_buffer.c
 func main() {
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
@@ -28,18 +32,44 @@ func main() {
 	}
 	defer objs.Close()
 
-	//SEC("tracepoint/syscalls/sys_enter_execve")
-	// attach to xxx
-	kp, err := link.Tracepoint("syscalls", "sys_enter_execve", objs.BpfProg, nil)
+	kp, err := link.Tracepoint("syscalls", "sys_enter_kill", objs.RingbufferExecve, nil)
 	if err != nil {
 		log.Fatalf("opening tracepoint: %s", err)
 	}
 	defer kp.Close()
 
-	log.Printf("Successfully started! Please run \"sudo cat /sys/kernel/debug/tracing/trace_pipe\" to see output of the BPF programs\n")
+	reader, err := ringbuf.NewReader(objs.Events)
+	if err != nil {
+		log.Fatalf("creating perf event reader: %s", err)
+	}
 
-	// Wait for a signal and close the perf reader,
-	// which will interrupt rd.Read() and make the program exit.
-	<-stopper
-	log.Println("Received signal, exiting program..")
+	go func() {
+		// Wait for a signal and close the perf reader,
+		// which will interrupt rd.Read() and make the program exit.
+		<-stopper
+		log.Println("Received signal, exiting program........................................................")
+
+		// 关闭reader
+		err := reader.Close()
+		if err != nil {
+			log.Fatalf("closing reader: %s", err)
+		}
+
+		if err := kp.Close(); err != nil {
+			log.Fatalf("closing perf event reader: %s", err)
+		}
+	}()
+
+	var event ringBufferEvent
+	for true {
+		record, err := reader.Read()
+		if err != nil {
+			return
+		}
+		if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &event); err != nil {
+			log.Printf("parsing perf event: %s", err)
+			continue
+		}
+		println("sig:" + strconv.Itoa(int(event.Sig)) + " pid:" + strconv.Itoa(int(event.Pid)))
+	}
 }

@@ -15,7 +15,7 @@ struct pro_data {
 
 struct pro_data *unused __attribute__((unused));
 
-SEC("tracepoint/syscalls/sys_enter_execve")
+SEC("tp/syscalls/sys_enter_execve")
 int bpf_prog(struct pt_regs *ctx) {
     bpf_printk("hello world");
     struct pro_data data;

@@ -6,7 +6,7 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 
 
 struct bpf_map_def SEC("maps") my_event = {
-        .type = BPF_MAP_TYPE_PERF_EVENT_ARRAY
+        .type = BPF_MAP_TYPE_RINGBUF,
 };
 
 struct pro_data {
@@ -23,8 +23,9 @@ struct pro_data {
 struct pro_data *unused __attribute__((unused));
 
 SEC("tracepoint/sock/inet_sock_set_state")
-int bpf_prog(struct pt_regs *ctx, struct sock *sk) {
+int bpf_prog(struct trace_event_raw_inet_sock_set_state *ctx) {
     struct pro_data data;
+    ctx->saddr
     data.pid = bpf_get_current_pid_tgid() >> 32;
     bpf_probe_read_kernel(&data.daddr, sizeof(data.daddr), (void *) &sk->sk_ack_backlog);
     bpf_perf_event_output(ctx, &my_event, 0, &data, sizeof(data));

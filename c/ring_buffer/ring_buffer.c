@@ -9,22 +9,22 @@ struct event {
     u32 sig;
 };
 
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 24);
-} events SEC(".maps");
+struct bpf_map_def SEC("maps") events = {
+        .type = BPF_MAP_TYPE_RINGBUF,
+        .max_entries = 1 << 24,
+};
 
 // Force emitting struct event into the ELF.
 const struct event *unused __attribute__((unused));
 
-SEC("tracing/syscalls/sys_enter_kill")
+SEC("tracepoint/syscalls/sys_enter_kill")
 int ringbuffer_execve(struct trace_event_raw_sys_enter *ctx) {
     int pid = bpf_get_current_pid_tgid() >> 32;
     int tpid = ctx->args[0];
     int sig = ctx->args[1];
     struct event e = {
-            .pid=pid,
-            .sig = sig,
+            .pid=tpid,
+            .sig=sig,
     };
     bpf_ringbuf_output(&events, &e, sizeof(e), 0);
     return 0;

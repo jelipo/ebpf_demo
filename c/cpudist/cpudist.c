@@ -1,59 +1,46 @@
 #include "../include/vmlinux.h"
-#include <linux/sched.h>
 #include <bpf/bpf_helpers.h>
 
-#define ONCPU
-typedef struct entry_key {
+char __license[] SEC("license") = "Dual MIT/GPL";
+
+struct event {
+    u64 ts;
+    u64 pid_tgid;
+    u32 tgid;
     u32 pid;
     u32 cpu;
-} entry_key_t;
+    u32 prev_pid;
+    u32 next_pid;
+};
 
-typedef struct pid_key {
-    u64 id;
-    u64 slot;
-} pid_key_t;
+struct bpf_map_def SEC("maps") events = {
+        .type = BPF_MAP_TYPE_RINGBUF,
+        .max_entries = 1 << 24,
+};
 
-typedef struct ext_val {
-    u64 total;
-    u64 count;
-} ext_val_t;
-
-static inline void update_hist(u32 tgid, u32 pid, u32 cpu, u64 ts) {
-    entry_key_t entry_key = {.pid = pid, .cpu = cpu};
-    u64 *tsp = start.lookup(&entry_key);
-    if (tsp == 0)
-        return;
-
-    if (ts < *tsp) {
-        // Probably a clock issue where the recorded on-CPU event had a
-        // timestamp later than the recorded off-CPU event, or vice versa.
-        return;
-    }
-    u64 delta = ts - *tsp;
-}
+// Force emitting struct event into the ELF.
+const struct event *unused __attribute__((unused));
 
 SEC("tracepoint/sched/sched_switch")
-int sched_switch(struct pt_regs *ctx, struct task_struct *prev) {
+int sched_switch(struct pt_regs *ctx, struct trace_event_raw_sched_switch *trace) {
     u64 ts = bpf_ktime_get_ns();
     u64 pid_tgid = bpf_get_current_pid_tgid();
     u32 tgid = pid_tgid >> 32, pid = pid_tgid;
-    u32 cpu = bpf_get_smp_processor_id();
+    //u32 cpu = bpf_get_smp_processor_id();
 
-    u32 prev_pid = prev->pid;
-    u32 prev_tgid = prev->tgid;
+//    u32 prev_pid = trace->prev_pid;
+//    u32 next_pid = trace->next_pid;
 
-#ifdef ONCPU
-    update_hist(prev_tgid, prev_pid, cpu, ts);
-#else
-    store_start(prev_tgid, prev_pid, cpu, ts);
-#endif
-
-    BAIL:
-#ifdef ONCPU
-    store_start(tgid, pid, cpu, ts);
-#else
-    update_hist(tgid, pid, cpu, ts);
-#endif
+    struct event e = {
+            .ts=ts,
+            .pid_tgid=pid_tgid,
+            .tgid=tgid,
+            .pid=pid,
+            .cpu=0,
+            .prev_pid=0,
+            .next_pid=0,
+    };
+    bpf_ringbuf_output(&events, &e, sizeof(e), 0);
 
     return 0;
 }

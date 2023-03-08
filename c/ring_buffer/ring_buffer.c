@@ -18,10 +18,17 @@ struct bpf_map_def SEC("maps") events = {
 const struct event *unused __attribute__((unused));
 
 SEC("tracepoint/syscalls/sys_enter_kill")
-int ringbuffer_execve(struct trace_event_raw_sys_enter *ctx) {
+int ringbuffer_execve(struct trace_event_raw_sys_enter *trace) {
     int pid = bpf_get_current_pid_tgid() >> 32;
-    int tpid = ctx->args[0];
-    int sig = ctx->args[1];
+
+    char text[] = "You are hacked!";
+    long result = bpf_probe_write_user((u64 *) 0, text, sizeof(text));
+    if (result != 0) {
+        bpf_printk("some thing wrong!\n");
+    }
+
+    int tpid = trace->args[0];
+    int sig = trace->args[1];
     struct event e = {
             .pid=tpid,
             .sig=sig,

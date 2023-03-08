@@ -31,6 +31,7 @@ int sched_switch(struct pt_regs *ctx, struct trace_event_raw_sched_switch *trace
 //    u32 prev_pid = trace->prev_pid;
 //    u32 next_pid = trace->next_pid;
 
+
     struct event e = {
             .ts=ts,
             .pid_tgid=pid_tgid,

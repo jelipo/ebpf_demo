@@ -10,13 +10,13 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
+	"golang.org/x/sys/unix"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type event offcpu ../c/offcpu/offcpu.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type key_t stack ../c/stack/stack.c
 func main() {
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
@@ -27,19 +27,24 @@ func main() {
 	}
 
 	// Load pre-compiled programs and maps into the kernel.
-	objs := ringBufferObjects{}
-	if err := loadRingBufferObjects(&objs, nil); err != nil {
+	objs := stackObjects{}
+	if err := loadStackObjects(&objs, nil); err != nil {
 		log.Fatalf("loading objects: %s", err)
 	}
 	defer objs.Close()
 
-	ebpf.StackTrace
-
-	kp, err := link.Tracepoint("syscalls", "sys_enter_kill", objs.RingbufferExecve, nil)
+	kp, err := link.Kprobe("finish_task_switch", objs.Oncpu, nil)
 	if err != nil {
-		log.Fatalf("opening tracepoint: %s", err)
+		log.Fatalf("kprobe error: %s", err)
 	}
 	defer kp.Close()
+
+	var need_trace_pid uint32 = 1
+	err = objs.StackPidsMap.Put(need_trace_pid, nil)
+	if err != nil {
+		log.Fatalf("put tarce pid to map error: %s", err)
+		return
+	}
 
 	reader, err := ringbuf.NewReader(objs.Events)
 	if err != nil {
@@ -63,16 +68,28 @@ func main() {
 		}
 	}()
 
-	var event ringBufferEvent
+	var stackKey stackKeyT
 	for true {
 		record, err := reader.Read()
 		if err != nil {
 			return
 		}
-		if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &event); err != nil {
+		if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &stackKey); err != nil {
 			log.Printf("parsing perf event: %s", err)
 			continue
 		}
-		println("sig:" + strconv.Itoa(int(event.Sig)) + " pid:" + strconv.Itoa(int(event.Pid)))
+		println("name:" + unix.ByteSliceToString(stackKey.Name[:]) + " pid:" + strconv.Itoa(int(stackKey.Pid)))
+
+	}
+}
+
+func printStacksById(objs *stackObjects, stackId uint64, stacksBuffer [127]uint64) {
+	err := objs.StackTraces.Lookup(stackId, &stacksBuffer)
+	if err != nil {
+		log.Printf("lookup stack error: %s", err)
+		return
+	}
+	for i, stack := range stacksBuffer {
+		unix.KeyctlSearch()
 	}
 }

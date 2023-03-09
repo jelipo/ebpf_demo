@@ -39,7 +39,7 @@ struct key_t {
     u32 tgid;
     int user_stack_id;
     int kernel_stack_id;
-    char name[TASK_COMM_LEN];
+    char name[16];
 };
 
 struct bpf_map_def SEC("maps") start = {
@@ -58,6 +58,20 @@ struct bpf_map_def SEC("maps") stack_traces = {
         .type = BPF_MAP_TYPE_STACK_TRACE,
         .key_size=sizeof(u32), // TODO size大小未知
         .max_entries = 1 << 24,
+};
+
+struct bpf_map_def SEC("maps") stack_map = {
+        .type           = BPF_MAP_TYPE_STACK_TRACE,
+        .key_size       = sizeof(uint32_t),
+        .value_size     = sizeof(struct bpf_stacktrace),
+        .max_entries    = 10240
+};
+
+struct bpf_map_def SEC("maps") _name = {
+        .type = _type,
+        .key_size = sizeof(u32),
+        .value_size = sizeof(struct bpf_stacktrace_info),
+        .max_entries = 10240
 };
 
 struct warn_event_t {
@@ -106,7 +120,6 @@ int oncpu(struct pt_regs *ctx, struct task_struct *prev) {
                 .t_start = t_start,
                 .t_end = t_end,
         };
-        bpf_sub
         warn_events.perf_submit(ctx, &event, sizeof(event));
         return 0;
     }
@@ -121,6 +134,8 @@ int oncpu(struct pt_regs *ctx, struct task_struct *prev) {
 
     key.pid = pid;
     key.tgid = tgid;
+
+    bpf_get_stack(ctx,)
 
     key.user_stack_id = bpf_get_stackid(ctx, &stack_traces, BPF_F_USER_STACK);
     key.kernel_stack_id = bpf_get_stackid(ctx, &stack_traces, 0);

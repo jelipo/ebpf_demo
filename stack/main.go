@@ -83,11 +83,11 @@ func main() {
 			continue
 		}
 		println("name:" + unix.ByteSliceToString(stackKey.Name[:]) + " pid:" + strconv.Itoa(int(stackKey.Pid)))
-		printStacksById(&objs, stackKey.UserStackId, stacksBuffer)
+		printStacksById(&objs, stackKey.UserStackId, stacksBuffer, &stackKey)
 	}
 }
 
-func printStacksById(objs *stackObjects, stackId int32, stacksBuffer [127]uint64) {
+func printStacksById(objs *stackObjects, stackId uint64, stacksBuffer [127]uint64, stackKey *stackKeyT) {
 	err := objs.StackTraces.Lookup(stackId, &stacksBuffer)
 	if err != nil {
 		log.Printf("lookup stack error: %s", err)

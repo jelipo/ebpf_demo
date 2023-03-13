@@ -7,8 +7,8 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 struct key_t {
     u32 pid;
     u32 tgid;
-    int user_stack_id;
-    int kernel_stack_id;
+    u64 user_stack_id;
+    u64 kernel_stack_id;
     u8 name[16];
 };
 
@@ -82,7 +82,7 @@ int oncpu(struct trace_event_raw_sched_switch *ctx) {
     key.kernel_stack_id = bpf_get_stackid(ctx, &stack_traces, 0);
     bpf_get_current_comm(&key.name, sizeof(key.name));
 
-
+    bpf_printk("user_stack_id:%d     user_stack_id:%d\n", key.user_stack_id, key.kernel_stack_id);
     // 发送到ring
     bpf_ringbuf_output(&events, &key, sizeof(key), 0);
     return 0;

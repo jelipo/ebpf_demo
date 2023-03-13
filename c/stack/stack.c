@@ -12,6 +12,12 @@ struct key_t {
     u8 name[16];
 };
 
+int test() {
+    return 0;
+}
+
+int main() {}
+
 // Force emitting struct event into the ELF.
 const struct key_t *unused __attribute__((unused));
 
@@ -23,7 +29,7 @@ struct bpf_map_def SEC("maps") events = {
 struct bpf_map_def SEC("maps") stack_pids_map = {
         .type = BPF_MAP_TYPE_HASH,
         .key_size=sizeof(u32),
-        .value_size=0,
+        .value_size=sizeof(int),
         .max_entries = 1024,
 };
 
@@ -36,21 +42,40 @@ struct bpf_map_def SEC("maps") stack_traces = {
         .max_entries = 10000,
 };
 
-SEC("kprobe/finish_task_switch")
-int oncpu(struct pt_regs *ctx, struct task_struct *prev) {
+void print_trace(struct trace_event_raw_sched_switch *ctx) {
+    u8 name[16];
+    bpf_get_current_comm(&name, sizeof(name));
+    bpf_printk("curr:%d   %s    ", bpf_get_current_pid_tgid(), &name);
+    bpf_printk("prev:%d   %s    ", ctx->prev_pid, ctx->prev_comm);
+    bpf_printk("next:%d   %s    \n", ctx->next_pid, ctx->next_comm);
+}
+
+SEC("tracepoint/sched/sched_switch")
+int oncpu(struct trace_event_raw_sched_switch *ctx) {
     // 判断是否是需要监控的PID
-    u32 pid = bpf_get_current_pid_tgid();
-    u32 tgid = bpf_get_current_pid_tgid() >> 32;
-    if (bpf_map_lookup_elem(&stack_pids_map, &pid) == NULL) {
+    char listen_pid_key[4] = "key1";
+    u32 *listen_pid = bpf_map_lookup_elem(&stack_pids_map, &listen_pid_key);
+
+    if (listen_pid == NULL) {
+        //bpf_printk("NULL");
         return 0;
     }
-    u32 prev_pid = prev->pid;
-    u32 prev_tgid = prev->tgid;
+    u32 curr_pid = bpf_get_current_pid_tgid() >> 32;
+    u32 tgid = bpf_get_current_pid_tgid() >> 32;
 
+    u8 name[16];
+    bpf_get_current_comm(&name, sizeof(name));
+    //bpf_printk("curr %d %s", curr_pid, name);
+    if (curr_pid == *listen_pid || ctx->prev_pid == *listen_pid ||
+        ctx->next_pid == *listen_pid) {
+        print_trace(ctx);
+    } else {
+        return 0;
+    }
     // create map key
     struct key_t key = {};
 
-    key.pid = pid;
+    key.pid = curr_pid;
     key.tgid = tgid;
 
     key.user_stack_id = bpf_get_stackid(ctx, &stack_traces, BPF_F_USER_STACK);
@@ -71,7 +96,8 @@ struct ksym {
 #define MAX_SYMS 300000
 static struct ksym syms[MAX_SYMS];
 static int sym_cnt;
-struct ksym *ksym_search(long key){
+
+struct ksym *ksym_search(long key) {
     int start = 0, end = sym_cnt;
     int result;
 

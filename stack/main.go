@@ -18,6 +18,7 @@ import (
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type key_t stack ../c/stack/stack.c
 func main() {
+	listenPid := os.Args[1]
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
 
@@ -33,14 +34,16 @@ func main() {
 	}
 	defer objs.Close()
 
-	kp, err := link.Kprobe("finish_task_switch", objs.Oncpu, nil)
+	kp, err := link.Tracepoint("sched", "sched_switch", objs.Oncpu, nil)
 	if err != nil {
 		log.Fatalf("kprobe error: %s", err)
 	}
 	defer kp.Close()
-
-	var need_trace_pid uint32 = 1
-	err = objs.StackPidsMap.Put(need_trace_pid, nil)
+	need_trace_pid, _ := strconv.ParseInt(listenPid, 10, 64)
+	bs := make([]byte, 4)
+	binary.LittleEndian.PutUint32(bs, uint32(need_trace_pid))
+	key := []byte("key1")
+	err = objs.StackPidsMap.Put(key, bs)
 	if err != nil {
 		log.Fatalf("put tarce pid to map error: %s", err)
 		return
@@ -69,6 +72,7 @@ func main() {
 	}()
 
 	var stackKey stackKeyT
+	var stacksBuffer [127]uint64
 	for true {
 		record, err := reader.Read()
 		if err != nil {
@@ -79,17 +83,18 @@ func main() {
 			continue
 		}
 		println("name:" + unix.ByteSliceToString(stackKey.Name[:]) + " pid:" + strconv.Itoa(int(stackKey.Pid)))
-
+		printStacksById(&objs, stackKey.UserStackId, stacksBuffer)
 	}
 }
 
-func printStacksById(objs *stackObjects, stackId uint64, stacksBuffer [127]uint64) {
+func printStacksById(objs *stackObjects, stackId int32, stacksBuffer [127]uint64) {
 	err := objs.StackTraces.Lookup(stackId, &stacksBuffer)
 	if err != nil {
 		log.Printf("lookup stack error: %s", err)
 		return
 	}
-	for i, stack := range stacksBuffer {
-		unix.KeyctlSearch()
+	for stack := range stacksBuffer {
+		// TODO 尝试找栈
+		println("stack:" + strconv.Itoa(stack))
 	}
 }

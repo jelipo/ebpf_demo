@@ -40,10 +40,10 @@ struct bpf_map_def SEC("maps") listen_pids_map = {
         .max_entries = 1024,
 };
 
-struct bpf_map_def SEC("maps") listen_pids_map = {
+struct bpf_map_def SEC("maps") temp_pid_status = {
         .type = BPF_MAP_TYPE_HASH,
-        .key_size=sizeof(u32),
-        .value_size=sizeof(int32),
+        .key_size=sizeof(struct temp_key_t),
+        .value_size=sizeof(struct temp_value_t),
         .max_entries = 1024,
 };
 
@@ -66,7 +66,8 @@ void print_trace(struct trace_event_raw_sched_switch *ctx) {
 
 void start(u32 pid, struct trace_event_raw_sched_switch *ctx) {
     u32 cpu_id = bpf_get_smp_processor_id();
-    bpf_map_lookup_elem(&listen_pids_map, &next_pid)
+
+    bpf_map_lookup_elem(&temp_pid_status, &pid);
 }
 
 

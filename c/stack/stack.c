@@ -12,9 +12,16 @@ struct key_t {
     u8 name[16];
 };
 
-int test() {
-    return 0;
-}
+// 用于暂存到map的struck
+struct temp_key_t {
+    u32 pid;
+    u32 cpu_id;
+};
+
+struct temp_value_t {
+    u32 stack_id;
+    u64 timestamp;
+};
 
 int main() {}
 
@@ -26,10 +33,17 @@ struct bpf_map_def SEC("maps") events = {
         .max_entries = 1 << 24,
 };
 
-struct bpf_map_def SEC("maps") stack_pids_map = {
+struct bpf_map_def SEC("maps") listen_pids_map = {
         .type = BPF_MAP_TYPE_HASH,
         .key_size=sizeof(u32),
-        .value_size=sizeof(int),
+        .value_size=sizeof(int32),
+        .max_entries = 1024,
+};
+
+struct bpf_map_def SEC("maps") listen_pids_map = {
+        .type = BPF_MAP_TYPE_HASH,
+        .key_size=sizeof(u32),
+        .value_size=sizeof(int32),
         .max_entries = 1024,
 };
 
@@ -45,22 +59,52 @@ struct bpf_map_def SEC("maps") stack_traces = {
 void print_trace(struct trace_event_raw_sched_switch *ctx) {
     u8 name[16];
     bpf_get_current_comm(&name, sizeof(name));
-    bpf_printk("curr:%d   %s    ", bpf_get_current_pid_tgid(), &name);
     bpf_printk("prev:%d   %s    ", ctx->prev_pid, ctx->prev_comm);
+    bpf_printk("curr:%d   %s    ", bpf_get_current_pid_tgid(), &name);
     bpf_printk("next:%d   %s    \n", ctx->next_pid, ctx->next_comm);
 }
 
-SEC("tracepoint/sched/sched_switch")
-int oncpu(struct trace_event_raw_sched_switch *ctx) {
-    // 判断是否是需要监控的PID
-    char listen_pid_key[4] = "key1";
-    u32 *listen_pid = bpf_map_lookup_elem(&stack_pids_map, &listen_pid_key);
+void start(u32 pid, struct trace_event_raw_sched_switch *ctx) {
+    u32 cpu_id = bpf_get_smp_processor_id();
+    bpf_map_lookup_elem(&listen_pids_map, &next_pid)
+}
 
-    if (listen_pid == NULL) {
-        //bpf_printk("NULL");
-        return 0;
+
+SEC("tracepoint/sched/sched_switch")
+int sched_switch(struct trace_event_raw_sched_switch *ctx) {
+    u32 prev_pid = ctx->prev_pid;
+    u32 next_pid = ctx->next_pid;
+    if (prev_pid == 0) {
+        // 恢复，查找之前保存的信息，并发送到用户空间
+        if (bpf_map_lookup_elem(&listen_pids_map, &next_pid) == NULL) {
+            return 0;
+        }
+        // print end
+    } else if (next_pid == 0) {
+        // 调度出,记录开始的时间戳和其他信息
+        if (bpf_map_lookup_elem(&listen_pids_map, &prev_pid) == NULL) {
+            return 0;
+        }
+        // print start
+    } else {
+
     }
     u32 curr_pid = bpf_get_current_pid_tgid() >> 32;
+//    if (*listen_pid != curr_pid) {}
+//
+//
+//    if (curr_pid == ctx->prev_pid) {
+//        // 说明PID被调度出了，应该记录开始时间
+//
+//    } else if (curr_pid == ctx->next_pid) {
+//        // 被调度回来，需要拿到上次的信息，并汇总push到用户空间中
+//
+//    } else {
+//        // 没见过的场景
+//        return 0;
+//    }
+
+
     u32 tgid = bpf_get_current_pid_tgid() >> 32;
 
     u8 name[16];
@@ -82,7 +126,7 @@ int oncpu(struct trace_event_raw_sched_switch *ctx) {
     key.kernel_stack_id = bpf_get_stackid(ctx, &stack_traces, 0);
     bpf_get_current_comm(&key.name, sizeof(key.name));
 
-    bpf_printk("user_stack_id:%d     user_stack_id:%d\n", key.user_stack_id, key.kernel_stack_id);
+    bpf_printk("user_stack_id:%d    kernel_stack_id:%d\n", key.user_stack_id, key.kernel_stack_id);
     // 发送到ring
     bpf_ringbuf_output(&events, &key, sizeof(key), 0);
     return 0;

@@ -15,7 +15,6 @@ struct key_t {
 // 用于暂存到map的struck
 struct temp_key_t {
     u32 pid;
-    u32 cpu_id;
 };
 
 struct temp_value_t {
@@ -65,8 +64,7 @@ void print_trace(struct trace_event_raw_sched_switch *ctx) {
 }
 
 void start(u32 pid, struct trace_event_raw_sched_switch *ctx) {
-    u32 cpu_id = bpf_get_smp_processor_id();
-
+    u64 start_time = bpf_ktime_get_ns();
     bpf_map_lookup_elem(&temp_pid_status, &pid);
 }
 

@@ -6,10 +6,8 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 
 struct key_t {
     u32 pid;
-    u32 tgid;
     u64 user_stack_id;
     u64 kernel_stack_id;
-    u8 name[16];
 };
 
 // 用于暂存到map的struck
@@ -18,19 +16,15 @@ struct temp_key_t {
 };
 
 struct temp_value_t {
-    u32 stack_id;
-    u64 timestamp;
+    u32 user_stack_id;
+    u32 kernel_stack_id;
+    u64 start_time;
 };
 
 int main() {}
 
 // Force emitting struct event into the ELF.
 const struct key_t *unused __attribute__((unused));
-
-struct bpf_map_def SEC("maps") events = {
-        .type = BPF_MAP_TYPE_RINGBUF,
-        .max_entries = 1 << 24,
-};
 
 struct bpf_map_def SEC("maps") listen_pids_map = {
         .type = BPF_MAP_TYPE_HASH,
@@ -55,19 +49,58 @@ struct bpf_map_def SEC("maps") stack_traces = {
         .max_entries = 10000,
 };
 
-void print_trace(struct trace_event_raw_sched_switch *ctx) {
-    u8 name[16];
-    bpf_get_current_comm(&name, sizeof(name));
-    bpf_printk("prev:%d   %s    ", ctx->prev_pid, ctx->prev_comm);
-    bpf_printk("curr:%d   %s    ", bpf_get_current_pid_tgid(), &name);
-    bpf_printk("next:%d   %s    \n", ctx->next_pid, ctx->next_comm);
-}
+struct bpf_map_def SEC("maps") pid_stack_counter = {
+        .type = BPF_MAP_TYPE_HASH,
+        .key_size=sizeof(struct key_t),
+        .value_size=sizeof(u64),
+        .max_entries = 1024 * 10,
+};
 
 void start(u32 pid, struct trace_event_raw_sched_switch *ctx) {
-    u64 start_time = bpf_ktime_get_ns();
-    bpf_map_lookup_elem(&temp_pid_status, &pid);
+    struct temp_value_t value = {};
+    value.start_time = bpf_ktime_get_ns();
+    value.kernel_stack_id = bpf_get_stackid(ctx, &stack_traces, 0);
+    value.user_stack_id = bpf_get_stackid(ctx, &stack_traces, BPF_F_USER_STACK);
+    struct temp_key_t key = {.pid = pid};
+    bpf_map_update_elem(&temp_pid_status, &key, &value, BPF_ANY);
 }
 
+void increment_ns(u32 pid, struct temp_value_t *start_value, u64 usage_us) {
+//    struct key_t key = {
+//            .pid = pid,
+//            .user_stack_id = start_value->user_stack_id,
+//            .kernel_stack_id = start_value->kernel_stack_id,
+//    };
+
+    struct key_t key = {};
+    key.pid = pid;
+    key.user_stack_id = start_value->user_stack_id;
+    key.kernel_stack_id = start_value->kernel_stack_id;
+
+
+    u64 *total_usage_us = bpf_map_lookup_elem(&pid_stack_counter, &key);
+    u64 result = 0;
+    if (total_usage_us == NULL) {
+        result = usage_us;
+    } else {
+        result = usage_us + *total_usage_us;
+    }
+    bpf_map_update_elem(&pid_stack_counter, &key, &result, BPF_ANY);
+}
+
+void end(u32 pid, struct trace_event_raw_sched_switch *ctx) {
+    struct temp_key_t key = {.pid = pid};
+    struct temp_value_t *value = NULL;
+    value = bpf_map_lookup_elem(&temp_pid_status, &key);
+    if (value == NULL) {
+        // 找不到直接return
+        return;
+    }
+    u64 end_time = bpf_ktime_get_ns();
+    // 计算出使用的时间，微秒
+    u64 usage_us = (end_time - value->start_time) / 1000;
+    increment_ns(pid, value, usage_us);
+}
 
 SEC("tracepoint/sched/sched_switch")
 int sched_switch(struct trace_event_raw_sched_switch *ctx) {
@@ -78,89 +111,20 @@ int sched_switch(struct trace_event_raw_sched_switch *ctx) {
         if (bpf_map_lookup_elem(&listen_pids_map, &next_pid) == NULL) {
             return 0;
         }
-        // print end
+        end(next_pid, ctx);
     } else if (next_pid == 0) {
         // 调度出,记录开始的时间戳和其他信息
         if (bpf_map_lookup_elem(&listen_pids_map, &prev_pid) == NULL) {
             return 0;
         }
-        // print start
+        start(prev_pid, ctx);
     } else {
-
-    }
-    u32 curr_pid = bpf_get_current_pid_tgid() >> 32;
-//    if (*listen_pid != curr_pid) {}
-//
-//
-//    if (curr_pid == ctx->prev_pid) {
-//        // 说明PID被调度出了，应该记录开始时间
-//
-//    } else if (curr_pid == ctx->next_pid) {
-//        // 被调度回来，需要拿到上次的信息，并汇总push到用户空间中
-//
-//    } else {
-//        // 没见过的场景
-//        return 0;
-//    }
-
-
-    u32 tgid = bpf_get_current_pid_tgid() >> 32;
-
-    u8 name[16];
-    bpf_get_current_comm(&name, sizeof(name));
-    //bpf_printk("curr %d %s", curr_pid, name);
-    if (curr_pid == *listen_pid || ctx->prev_pid == *listen_pid ||
-        ctx->next_pid == *listen_pid) {
-        print_trace(ctx);
-    } else {
+        if (bpf_map_lookup_elem(&listen_pids_map, &next_pid) != NULL) {
+            end(next_pid, ctx);
+        } else if (bpf_map_lookup_elem(&listen_pids_map, &prev_pid) != NULL) {
+            start(prev_pid, ctx);
+        }
         return 0;
     }
-    // create map key
-    struct key_t key = {};
-
-    key.pid = curr_pid;
-    key.tgid = tgid;
-
-    key.user_stack_id = bpf_get_stackid(ctx, &stack_traces, BPF_F_USER_STACK);
-    key.kernel_stack_id = bpf_get_stackid(ctx, &stack_traces, 0);
-    bpf_get_current_comm(&key.name, sizeof(key.name));
-
-    bpf_printk("user_stack_id:%d    kernel_stack_id:%d\n", key.user_stack_id, key.kernel_stack_id);
-    // 发送到ring
-    bpf_ringbuf_output(&events, &key, sizeof(key), 0);
     return 0;
-}
-
-struct ksym {
-    long addr;
-    char *name;
-};
-
-#define MAX_SYMS 300000
-static struct ksym syms[MAX_SYMS];
-static int sym_cnt;
-
-struct ksym *ksym_search(long key) {
-    int start = 0, end = sym_cnt;
-    int result;
-
-    while (start < end) {
-        size_t mid = start + (end - start) / 2;
-
-        result = key - syms[mid].addr;
-        if (result < 0)
-            end = mid;
-        else if (result > 0)
-            start = mid + 1;
-        else
-            return &syms[mid];
-    }
-
-    if (start >= 1 && syms[start - 1].addr < key &&
-        key < syms[start].addr)
-        /* valid ksym */
-        return &syms[start - 1];
-
-    /* out of range. return _stext */
-    return &syms[0];
 }

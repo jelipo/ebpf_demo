@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"log"
 	"os"
@@ -11,15 +10,13 @@ import (
 	"syscall"
 
 	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
-	"golang.org/x/sys/unix"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type key_t stack ../c/stack/stack.c
 func main() {
 	listenPid := os.Args[1]
-	stopper := make(chan os.Signal, 1)
+	stopper := make(chan os.Signal, 2)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
 
 	// Allow the current process to lock memory for eBPF resources.
@@ -34,7 +31,7 @@ func main() {
 	}
 	defer objs.Close()
 
-	kp, err := link.Tracepoint("sched", "sched_switch", objs.Oncpu, nil)
+	kp, err := link.Tracepoint("sched", "sched_switch", objs.SchedSwitch, nil)
 	if err != nil {
 		log.Fatalf("kprobe error: %s", err)
 	}
@@ -42,48 +39,26 @@ func main() {
 	need_trace_pid, _ := strconv.ParseInt(listenPid, 10, 64)
 	bs := make([]byte, 4)
 	binary.LittleEndian.PutUint32(bs, uint32(need_trace_pid))
-	key := []byte("key1")
-	err = objs.StackPidsMap.Put(key, bs)
+	err = objs.ListenPidsMap.Put(bs, bs)
 	if err != nil {
-		log.Fatalf("put tarce pid to map error: %s", err)
+		log.Fatalf("write pid error")
 		return
 	}
+	log.Println("offcpu is ready....")
+	<-stopper
+	log.Println("Received signal, read the map")
 
-	reader, err := ringbuf.NewReader(objs.Events)
-	if err != nil {
-		log.Fatalf("creating perf event reader: %s", err)
+	var key stackKeyT
+	var total uint64
+	iterate := objs.PidStackCounter.Iterate()
+	for iterate.Next(&key, &total) {
+		println("userStackId: " + strconv.FormatUint(key.UserStackId, 10) +
+			"    kernelStackId: " + strconv.FormatUint(key.KernelStackId, 10) +
+			"    total:" + strconv.FormatUint(total/1000, 10) + "ms")
 	}
 
-	go func() {
-		// Wait for a signal and close the perf reader,
-		// which will interrupt rd.Read() and make the program exit.
-		<-stopper
-		log.Println("Received signal, exiting program........................................................")
-
-		// 关闭reader
-		err := reader.Close()
-		if err != nil {
-			log.Fatalf("closing reader: %s", err)
-		}
-
-		if err := kp.Close(); err != nil {
-			log.Fatalf("closing perf event reader: %s", err)
-		}
-	}()
-
-	var stackKey stackKeyT
-	var stacksBuffer [127]uint64
-	for true {
-		record, err := reader.Read()
-		if err != nil {
-			return
-		}
-		if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &stackKey); err != nil {
-			log.Printf("parsing perf event: %s", err)
-			continue
-		}
-		println("name:" + unix.ByteSliceToString(stackKey.Name[:]) + " pid:" + strconv.Itoa(int(stackKey.Pid)))
-		printStacksById(&objs, uint32(stackKey.UserStackId), stacksBuffer, &stackKey)
+	if err := kp.Close(); err != nil {
+		log.Fatalf("closing perf event reader: %s", err)
 	}
 }
 

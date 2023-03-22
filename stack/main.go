@@ -38,6 +38,9 @@ func main() {
 	}
 	defer kp.Close()
 	need_trace_pid, _ := strconv.ParseInt(listenPid, 10, 64)
+
+	_, _ = NewProcsymsCache(uint32(need_trace_pid))
+
 	bs := make([]byte, 4)
 	binary.LittleEndian.PutUint32(bs, uint32(need_trace_pid))
 	err = objs.ListenPidsMap.Put(bs, bs)
@@ -66,7 +69,7 @@ func main() {
 		printUserStacksById(&objs, uint32(key.UserStackId), stacksBuffer)
 		print("-;")
 		printKernelStacksById(&objs, uint32(key.KernelStackId), stacksBuffer, kallsyms)
-		println(" " + strconv.FormatUint(total, 10) + "\n")
+		println(" " + strconv.FormatUint(total, 10))
 	}
 
 	if err := kp.Close(); err != nil {

@@ -25,7 +25,6 @@ func NewKallsyms() (*Kallsyms, error) {
 	defer file.Close()
 	reader := bufio.NewReader(file)
 	kallsyms := Kallsyms{}
-	// 按行处理txt
 	for {
 		line, _, err := reader.ReadLine()
 		if err == io.EOF {

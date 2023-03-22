@@ -18,4 +18,4 @@ add_executable(c
         hash_map/hash_map.c
         event_array/event_array.c
         ring_buffer/ring_buffer.c
-        net/net.c cpudist/cpudist.c memory/memory.c offcpu/offcpu.c stack/stack.c)
+        net/net.c cpudist/cpudist.c memory/memory.c offcpu/offcpu.c stack/stack.c kprobe/kprobe.c kprobe/kprobe.c)

@@ -7,19 +7,18 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 
 
 struct key_t {
-    u32 pid;
+    u32 tgid;
     u64 user_stack_id;
     u64 kernel_stack_id;
 };
 
 // 用于暂存到map的struck
 struct temp_key_t {
+    u32 tgid;
     u32 pid;
 };
 
 struct temp_value_t {
-    u32 user_stack_id;
-    u32 kernel_stack_id;
     u64 start_time;
 };
 
@@ -58,11 +57,11 @@ struct bpf_map_def SEC("maps") pid_stack_counter = {
         .max_entries = 1024 * 10,
 };
 
-void increment_ns(u32 pid, struct temp_value_t *start_value, u64 usage_us) {
+void increment_ns(void *ctx, u32 tgid, u64 usage_us) {
     struct key_t key = {};
-    key.pid = pid;
-    key.user_stack_id = start_value->user_stack_id;
-    key.kernel_stack_id = start_value->kernel_stack_id;
+    key.tgid = tgid;
+    key.user_stack_id = bpf_get_stackid(ctx, &stack_traces, BPF_F_USER_STACK);
+    key.kernel_stack_id = bpf_get_stackid(ctx, &stack_traces, 0);
 
     u64 *total_usage_us = bpf_map_lookup_elem(&pid_stack_counter, &key);
     u64 result = 0;
@@ -75,30 +74,34 @@ void increment_ns(u32 pid, struct temp_value_t *start_value, u64 usage_us) {
 }
 
 // 尝试记录offcputime开始时间
-void try_record_start(u32 prev_pid, u32 prev_tgid, void *ctx) {
-    if (prev_pid == 0 || prev_tgid == 0) {
+void try_record_start(u32 prev_pid, u32 prev_tgid) {
+    if (prev_tgid == 0) {
         return;
     }
-    if (bpf_map_lookup_elem(&listen_pids_map, &prev_pid) == NULL) {
+    if (bpf_map_lookup_elem(&listen_pids_map, &prev_tgid) == NULL) {
         return;
     }
     struct temp_value_t value = {};
     value.start_time = bpf_ktime_get_ns();
-    value.kernel_stack_id = bpf_get_stackid(ctx, &stack_traces, 0);
-    value.user_stack_id = bpf_get_stackid(ctx, &stack_traces, BPF_F_USER_STACK);
-    struct temp_key_t key = {.pid = prev_pid};
+    struct temp_key_t key = {
+            .pid = prev_pid,
+            .tgid = prev_tgid
+    };
     bpf_map_update_elem(&temp_pid_status, &key, &value, BPF_ANY);
 }
 
 // 尝试记录offcputime结束并计算时间
-void try_record_end(u32 next_pid, u32 next_tgid) {
-    if (next_pid == 0 || next_tgid == 0) {
+void try_record_end(void *ctx, u32 next_pid, u32 next_tgid) {
+    if (next_tgid == 0) {
         return;
     }
-    if (bpf_map_lookup_elem(&listen_pids_map, &next_pid) == NULL) {
+    if (bpf_map_lookup_elem(&listen_pids_map, &next_tgid) == NULL) {
         return;
     }
-    struct temp_key_t key = {.pid = next_pid};
+    struct temp_key_t key = {
+            .pid = next_pid,
+            .tgid = next_tgid
+    };
     struct temp_value_t *value = NULL;
     value = bpf_map_lookup_elem(&temp_pid_status, &key);
     if (value == NULL) {
@@ -108,23 +111,20 @@ void try_record_end(u32 next_pid, u32 next_tgid) {
     u64 end_time = bpf_ktime_get_ns();
     // 计算出使用的时间，微秒
     u64 usage_us = (end_time - value->start_time) / 1000;
-    increment_ns(next_pid, value, usage_us);
+    increment_ns(ctx, next_tgid, usage_us);
 }
 
-SEC("kprobe/finish_task_switch")
-int sched_switch(struct pt_regs *ctx, struct task_struct *prev) {
-    u32 prev_pid = prev->pid;
-    u32 prev_tgid = prev->tgid;
+SEC("kprobe/finish_task_switch.isra.0")
+int sched_switch(struct pt_regs *ctx) {
+    struct task_struct *prev = (void *) PT_REGS_PARM1(ctx);
+    u32 prev_pid = BPF_CORE_READ(prev, pid);
+    u32 prev_tgid = BPF_CORE_READ(prev, tgid);
 
-    u64 next_pid_tgid = bpf_get_current_pid_tgid();
-    u32 next_pid = next_pid_tgid >> 32;
-    u32 next_tgid = next_pid_tgid;
+    u32 next_tgid = bpf_get_current_pid_tgid() >> 32;
+    u32 next_pid = bpf_get_current_pid_tgid();
 
-    if (prev_pid == 1061 || prev_tgid == 1061 || next_tgid == 1061) {
-        bpf_printk("prev_pid:%d prev_tgid:%d next_tgid:%d", prev_pid, prev_tgid, next_tgid);
-    }
 
-    try_record_start(prev_pid, prev_tgid, ctx);
-    try_record_end(next_pid, next_tgid);
+    try_record_start(prev_pid, prev_tgid);
+    try_record_end(ctx, next_pid, next_tgid);
     return 0;
 }

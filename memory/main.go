@@ -32,7 +32,7 @@ func main() {
 	}
 	defer objs.Close()
 
-	kp, err := link.Kprobe("finish_task_switch", objs.TraceKmalloc, nil)
+	kp, err := link.Tracepoint("kmem", "kmalloc", objs.TraceKmalloc, nil)
 	if err != nil {
 		log.Fatalf("opening tracepoint: %s", err)
 	}

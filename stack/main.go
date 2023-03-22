@@ -14,7 +14,7 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type key_t stack ../c/stack/stack.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go --target=amd64 -type key_t stack ../c/stack/stack.c
 func main() {
 	listenPid := os.Args[1]
 	stopper := make(chan os.Signal, 2)
@@ -32,7 +32,7 @@ func main() {
 	}
 	defer objs.Close()
 
-	kp, err := link.Tracepoint("sched", "sched_switch", objs.SchedSwitch, nil)
+	kp, err := link.Kprobe("finish_task_switch.isra.0", objs.SchedSwitch, nil)
 	if err != nil {
 		log.Fatalf("kprobe error: %s", err)
 	}
@@ -55,19 +55,18 @@ func main() {
 	var key stackKeyT
 	var total uint64
 	iterate := objs.PidStackCounter.Iterate()
+	kallsyms, err := NewKallsyms()
 	for iterate.Next(&key, &total) {
-		println("userStackId: " + strconv.FormatUint(key.UserStackId, 10) +
-			"    kernelStackId: " + strconv.FormatUint(key.KernelStackId, 10) +
-			"    total:" + strconv.FormatUint(total/1000, 10) + "ms")
 		var stacksBuffer [127]uint64
 
-		kallsyms, err := NewKallsyms()
 		if err != nil {
 			log.Fatalf("NewKallsyms error %s", err)
 			return
 		}
-		printStacksById(&objs, uint32(key.KernelStackId), stacksBuffer, kallsyms)
-		//printStacksById(&objs, uint32(key.UserStackId), stacksBuffer, kallsyms)
+		printUserStacksById(&objs, uint32(key.UserStackId), stacksBuffer)
+		print("-;")
+		printKernelStacksById(&objs, uint32(key.KernelStackId), stacksBuffer, kallsyms)
+		println(" " + strconv.FormatUint(total, 10) + "\n")
 	}
 
 	if err := kp.Close(); err != nil {
@@ -75,17 +74,30 @@ func main() {
 	}
 }
 
-func printStacksById(objs *stackObjects, stackId uint32, stacksBuffer [127]uint64, kallsyms *Kallsyms) {
+func printKernelStacksById(objs *stackObjects, stackId uint32, stacksBuffer [127]uint64, kallsyms *Kallsyms) {
 	err := objs.StackTraces.Lookup(stackId, &stacksBuffer)
 	if err != nil {
-		log.Printf("lookup stack error: stackId: %s err: %s", stackId, err)
+		log.Printf("lookup kernel stack error: stackId: %s err: %s", stackId, err)
 		return
 	}
 	for _, stack := range stacksBuffer {
 		if stack == 0 {
 			continue
 		}
-		print(kallsyms.get(stack).name + " ")
+		print(kallsyms.get(stack).name + ";")
 	}
-	println("")
+}
+
+func printUserStacksById(objs *stackObjects, stackId uint32, stacksBuffer [127]uint64) {
+	err := objs.StackTraces.Lookup(stackId, &stacksBuffer)
+	if err != nil {
+		log.Printf("lookup user stack error: stackId: %s err: %s", stackId, err)
+		return
+	}
+	for _, symbolAddr := range stacksBuffer {
+		if symbolAddr == 0 {
+			continue
+		}
+		print(strconv.FormatUint(symbolAddr, 16) + ";")
+	}
 }

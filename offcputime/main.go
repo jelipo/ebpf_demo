@@ -15,6 +15,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// 计算offcputime
+// 使用： offcputime [pid] [second]
+//
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go --target=amd64 -type key_t offcputime ../c/offcputime/offcputime.c
 func main() {
 	needTracePid, _ := strconv.ParseInt(os.Args[1], 10, 64)

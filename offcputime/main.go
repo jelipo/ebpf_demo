@@ -12,11 +12,13 @@ import (
 
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
+	"golang.org/x/sys/unix"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go --target=amd64 -type key_t stack ../c/stack/stack.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go --target=amd64 -type key_t offcputime ../c/offcputime/offcputime.c
 func main() {
-	listenPid := os.Args[1]
+	needTracePid, _ := strconv.ParseInt(os.Args[1], 10, 64)
+	traceSecond, _ := strconv.ParseInt(os.Args[2], 10, 64)
 	stopper := make(chan os.Signal, 2)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
 
@@ -26,8 +28,8 @@ func main() {
 	}
 
 	// Load pre-compiled programs and maps into the kernel.
-	objs := stackObjects{}
-	if err := loadStackObjects(&objs, nil); err != nil {
+	objs := offcputimeObjects{}
+	if err := loadOffcputimeObjects(&objs, nil); err != nil {
 		log.Fatalf("loading objects: %s", err)
 	}
 	defer objs.Close()
@@ -37,28 +39,25 @@ func main() {
 		log.Fatalf("kprobe error: %s", err)
 	}
 	defer kp.Close()
-	need_trace_pid, _ := strconv.ParseInt(listenPid, 10, 64)
-
-	_, _ = NewProcsymsCache(uint32(need_trace_pid))
 
 	bs := make([]byte, 4)
-	binary.LittleEndian.PutUint32(bs, uint32(need_trace_pid))
+	binary.LittleEndian.PutUint32(bs, uint32(needTracePid))
 	err = objs.ListenPidsMap.Put(bs, bs)
 	if err != nil {
 		log.Fatalf("write pid error")
 		return
 	}
 	log.Println("offcpu is ready....")
-
-	timer := time.NewTimer(10 * time.Second)
+	timer := time.NewTimer(time.Duration(traceSecond) * time.Second)
 
 	<-timer.C
 	log.Println("Received signal, read the map")
 
-	var key stackKeyT
+	var key offcputimeKeyT
 	var total uint64
 	iterate := objs.PidStackCounter.Iterate()
-	kallsyms, err := NewKallsyms()
+	kallsyms, _ := NewKallsyms()
+	procsyscache, _ := NewProcsymsCache(uint32(needTracePid))
 	for iterate.Next(&key, &total) {
 		var stacksBuffer [127]uint64
 
@@ -66,8 +65,10 @@ func main() {
 			log.Fatalf("NewKallsyms error %s", err)
 			return
 		}
-		printUserStacksById(&objs, uint32(key.UserStackId), stacksBuffer)
-		print("-;")
+		name := unix.ByteSliceToString(key.Comm[:])
+		print(name)
+		printUserStacksById(&objs, uint32(key.UserStackId), stacksBuffer, procsyscache)
+		print(";-")
 		printKernelStacksById(&objs, uint32(key.KernelStackId), stacksBuffer, kallsyms)
 		println(" " + strconv.FormatUint(total, 10))
 	}
@@ -77,30 +78,35 @@ func main() {
 	}
 }
 
-func printKernelStacksById(objs *stackObjects, stackId uint32, stacksBuffer [127]uint64, kallsyms *Kallsyms) {
+func printKernelStacksById(objs *offcputimeObjects, stackId uint32, stacksBuffer [127]uint64, kallsyms *Kallsyms) {
 	err := objs.StackTraces.Lookup(stackId, &stacksBuffer)
 	if err != nil {
 		log.Printf("lookup kernel stack error: stackId: %s err: %s", stackId, err)
 		return
 	}
-	for _, stack := range stacksBuffer {
-		if stack == 0 {
+	size := len(stacksBuffer)
+	for i := range stacksBuffer {
+		symbol := stacksBuffer[size-i-1]
+		if symbol == 0 {
 			continue
 		}
-		print(kallsyms.get(stack).name + ";")
+		print(";" + kallsyms.get(symbol).name)
 	}
 }
 
-func printUserStacksById(objs *stackObjects, stackId uint32, stacksBuffer [127]uint64) {
+func printUserStacksById(objs *offcputimeObjects, stackId uint32, stacksBuffer [127]uint64, procsyscache *ProcsymsCache) {
 	err := objs.StackTraces.Lookup(stackId, &stacksBuffer)
 	if err != nil {
 		log.Printf("lookup user stack error: stackId: %s err: %s", stackId, err)
 		return
 	}
-	for _, symbolAddr := range stacksBuffer {
-		if symbolAddr == 0 {
+	size := len(stacksBuffer)
+	for i := range stacksBuffer {
+		symbol := stacksBuffer[size-i-1]
+		if symbol == 0 {
 			continue
 		}
-		print(strconv.FormatUint(symbolAddr, 16) + ";")
+		name := procsyscache.search(symbol)
+		print(";" + name)
 	}
 }

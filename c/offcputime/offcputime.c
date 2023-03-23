@@ -8,8 +8,10 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 
 struct key_t {
     u32 tgid;
+    u32 pid;
     u64 user_stack_id;
     u64 kernel_stack_id;
+    u8 comm[16];
 };
 
 // 用于暂存到map的struck
@@ -57,11 +59,13 @@ struct bpf_map_def SEC("maps") pid_stack_counter = {
         .max_entries = 1024 * 10,
 };
 
-void increment_ns(void *ctx, u32 tgid, u64 usage_us) {
+void increment_ns(void *ctx, u32 pid, u32 tgid, u64 usage_us) {
     struct key_t key = {};
     key.tgid = tgid;
+    key.pid = pid;
     key.user_stack_id = bpf_get_stackid(ctx, &stack_traces, BPF_F_USER_STACK);
     key.kernel_stack_id = bpf_get_stackid(ctx, &stack_traces, 0);
+    bpf_get_current_comm(&key.comm, sizeof(key.comm));
 
     u64 *total_usage_us = bpf_map_lookup_elem(&pid_stack_counter, &key);
     u64 result = 0;
@@ -74,7 +78,7 @@ void increment_ns(void *ctx, u32 tgid, u64 usage_us) {
 }
 
 // 尝试记录offcputime开始时间
-void try_record_start(u32 prev_pid, u32 prev_tgid) {
+inline void try_record_start(u32 prev_pid, u32 prev_tgid) {
     if (prev_tgid == 0) {
         return;
     }
@@ -91,8 +95,8 @@ void try_record_start(u32 prev_pid, u32 prev_tgid) {
 }
 
 // 尝试记录offcputime结束并计算时间
-void try_record_end(void *ctx, u32 next_pid, u32 next_tgid) {
-    if (next_tgid == 0) {
+inline void try_record_end(void *ctx, u32 next_pid, u32 next_tgid) {
+    if (next_tgid == 0 || next_pid == 0) {
         return;
     }
     if (bpf_map_lookup_elem(&listen_pids_map, &next_tgid) == NULL) {
@@ -111,7 +115,7 @@ void try_record_end(void *ctx, u32 next_pid, u32 next_tgid) {
     u64 end_time = bpf_ktime_get_ns();
     // 计算出使用的时间，微秒
     u64 usage_us = (end_time - value->start_time) / 1000;
-    increment_ns(ctx, next_tgid, usage_us);
+    increment_ns(ctx, next_pid, next_tgid, usage_us);
 }
 
 SEC("kprobe/finish_task_switch.isra.0")

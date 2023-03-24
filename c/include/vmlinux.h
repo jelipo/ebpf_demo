@@ -1,4 +1,4 @@
-#ifndef __VMLINUX_H__../include
+#ifndef __VMLINUX_H__
 #define __VMLINUX_H__
 
 #ifndef BPF_NO_PRESERVE_ACCESS_INDEX

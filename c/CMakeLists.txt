@@ -3,19 +3,16 @@ project(c C)
 
 set(CMAKE_C_STANDARD 11)
 
-
-#execute_process(
-#        COMMAND uname -r
-#        OUTPUT_VARIABLE KERNEL_RELEASE
-#        OUTPUT_STRIP_TRAILING_WHITESPACE
-#)
-#
-#include_directories(/usr/src/linux-headers-${KERNEL_RELEASE}/include)
-
+include_directories(include)
 
 add_executable(c
         hello/hello_kern.c
         hash_map/hash_map.c
         event_array/event_array.c
         ring_buffer/ring_buffer.c
-        net/net.c cpudist/cpudist.c memory/memory.c offcpu/offcpu.c stack/stack.c kprobe/kprobe.c kprobe/kprobe.c)
+        net/net.c cpudist/cpudist.c
+        memory/memory.c
+        kprobe/kprobe.c
+        offcputime/offcputime.c
+        )
+

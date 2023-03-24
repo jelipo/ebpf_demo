@@ -1,10 +1,9 @@
-#include "../include/vmlinux.h"
+#include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 
 char __license[] SEC("license") = "Dual MIT/GPL";
-
 
 struct key_t {
     u32 tgid;

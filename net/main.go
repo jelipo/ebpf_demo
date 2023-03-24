@@ -1,4 +1,3 @@
-// github.com/bigwhite/experiments/ebpf-examples/helloworld-go/main.go
 package main
 
 import (
